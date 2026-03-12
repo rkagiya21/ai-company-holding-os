@@ -1,0 +1,36 @@
+version: "3.9"
+
+services:
+  # ── AI CEO スケジューラ ────────────────────────────────────
+  aiceo-scheduler:
+    build: .
+    command: python -m src.aiceo.scheduler
+    env_file: .env
+    restart: unless-stopped
+    volumes:
+      - ./logs:/app/logs
+    depends_on:
+      - redis
+
+  # ── LINE Bot Webhook サーバ ────────────────────────────────────
+  line-bot:
+    build: .
+    command: python -m src.line_gateway.bot
+    env_file: .env
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./logs:/app/logs
+    depends_on:
+      - redis
+
+  # ── Redis（承認状態の一時保存） ────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+
+volumes:
+  redis_data:
