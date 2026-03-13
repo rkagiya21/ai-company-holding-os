@@ -1,5 +1,5 @@
 """
-src/aiceo/scheduler.py
+AI/scheduler.py
 毎朝 9:00（JST）に全事業報告を LINE へ送信するスケジューラ
 """
 from apscheduler.schedulers.blocking import BlockingScheduler
@@ -7,8 +7,8 @@ from apscheduler.triggers.cron import CronTrigger
 from loguru import logger
 import pytz
 
-from config.settings import REPORT_CRON_HOUR, REPORT_CRON_MINUTE, REPORT_TIMEZONE
-from src.line_gateway.reporter import MorningReporter
+from settings import REPORT_CRON_HOUR, REPORT_CRON_MINUTE, REPORT_TIMEZONE
+from reporter import MorningReporter
 
 
 def run_morning_report():
