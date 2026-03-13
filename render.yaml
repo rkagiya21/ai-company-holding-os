@@ -1,0 +1,31 @@
+services:
+  - type: web
+    name: ai-company-os-bot
+    runtime: python
+    region: singapore
+    plan: free
+    buildCommand: pip install -r AI/requirements.txt
+    startCommand: cd AI && gunicorn bot:app --bind 0.0.0.0:$PORT --workers 1 --timeout 60
+    envVars:
+      - key: LINE_CHANNEL_ACCESS_TOKEN
+        sync: false
+      - key: LINE_CHANNEL_SECRET
+        sync: false
+      - key: LINE_USER_ID
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: DIFY_KINDLE_WF_KEY
+        sync: false
+      - key: DIFY_NOTE_WF_KEY
+        sync: false
+      - key: DIFY_YOUTUBE_WF_KEY
+        sync: false
+      - key: DIFY_SNS_WF_KEY
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_KEY
+        sync: false
