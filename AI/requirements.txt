@@ -16,6 +16,7 @@ requests>=2.32.0
 
 # Scheduler
 apscheduler>=3.10.0
+pytz>=2024.1
 
 # Database（状態永続化）
 supabase>=2.0.0
@@ -23,8 +24,8 @@ supabase>=2.0.0
 # Utils
 python-dotenv>=1.0.0
 pydantic>=2.0.0
-tenacity>=8.2.0  # リトライ
-loguru>=0.7.0    # ロギング
+tenacity>=8.2.0 # リトライ
+loguru>=0.7.0 # ロギング
 
 # Dev
 pytest>=8.0.0
