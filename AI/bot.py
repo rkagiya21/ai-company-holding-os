@@ -1,5 +1,7 @@
-"""AI/bot.py - 議題記憶+思考スタイルB案対応版"""
+"""AI/bot.py - 議題記憶+Kindle自動化対応版"""
+import os
 import time
+import threading
 from flask import Flask, request, abort
 from linebot.v3 import WebhookHandler
 from linebot.v3.exceptions import InvalidSignatureError
@@ -17,9 +19,8 @@ app = Flask(__name__)
 handler = WebhookHandler(LINE_CHANNEL_SECRET)
 router = AgentRouter()
 _user_mode = {}
-_last_topic = {}  # ユーザーごとの最後の議題を記憶
+_last_topic = {}
 
-# 短い・曖昧なメッセージのパターン
 FOLLOWUP_PATTERNS = [
     "どうですか", "どう思う", "どうでしょう", "意見は",
     "続けて", "もっと", "他には", "次は", "それで",
@@ -57,13 +58,44 @@ def _reply_once(reply_token, text):
         )
 
 def is_followup(text):
-    """曖昧な継続メッセージかどうかを判定"""
-    if len(text) < 15:  # 短いメッセージ
+    if len(text) < 15:
         return True
     for pat in FOLLOWUP_PATTERNS:
         if pat in text:
             return True
     return False
+
+
+def _run_kindle(user_id, theme):
+    import requests as req
+    DIFY_KEY = os.getenv("DIFY_KINDLE_WF_KEY", "").strip()
+    if not DIFY_KEY:
+        push_text(user_id, "❌ DIFY_KINDLE_WF_KEY が未設定です")
+        return
+    try:
+        logger.info(f"[Kindle] テーマ: {theme}")
+        r = req.post(
+            "https://api.dify.ai/v1/workflows/run",
+            headers={"Authorization": f"Bearer {DIFY_KEY}", "Content-Type": "application/json"},
+            json={
+                "inputs": {"book_title": theme, "genre": "ビジネス・自己啓発"},
+                "response_mode": "blocking",
+                "user": user_id
+            },
+            timeout=300
+        )
+        data = r.json()
+        outputs = data.get("data", {}).get("outputs", {})
+        drive_url = outputs.get("drive_url", "")
+        if drive_url:
+            msg = f"✅ Kindle原稿完成！\n\nテーマ: {theme}\n\n📄 Googleドライブ:\n{drive_url}\n\nKDPに登録しますか？ YES/NO"
+        else:
+            msg = f"✅ Kindle生成完了！\n\nテーマ: {theme}\n\n出力: {str(outputs)[:500]}"
+        push_text(user_id, msg)
+    except Exception as e:
+        logger.error(f"[Kindle Error] {e}")
+        push_text(user_id, f"❌ Kindleエラー: {e}")
+
 
 @app.route("/webhook", methods=["POST"])
 def webhook():
@@ -85,7 +117,6 @@ def handle_message(event):
 
     save_message(user_id, "user", text, get_mode(user_id))
 
-    # モード切り替え
     if lower in ("経営モード", "ceo", "経営"):
         set_mode(user_id, "ceo")
         _reply_once(reply_token, "👔 【経営モード】に切り替えました\n\n「戦略」で戦略ルームへ。")
@@ -93,7 +124,7 @@ def handle_message(event):
 
     if lower in ("戦略ルームモード", "戦略ルーム", "戦略", "strategy"):
         set_mode(user_id, "strategy")
-        _last_topic[user_id] = ""  # 議題リセット
+        _last_topic[user_id] = ""
         reply = (
             "🏛️ 【戦略ルームモード】\n\n"
             "メンバー:\n"
@@ -103,6 +134,7 @@ def handle_message(event):
             "🎬 映え子さん（SNS）\n"
             "👑 ボブ（CEO）\n\n"
             "名指しOK: 「テック君、〇〇して」\n"
+            "Kindleコマンド: 「kindle テーマ名」\n"
             "全員会議: そのまま議題を投げる\n"
             "「経営」で経営モードへ。"
         )
@@ -111,7 +143,17 @@ def handle_message(event):
 
     if lower in ("ヘルプ", "help"):
         mode_label = "👔 経営" if get_mode(user_id) == "ceo" else "🏛️ 戦略ルーム"
-        _reply_once(reply_token, f"現在: {mode_label}\n\n「経営」「戦略」でモード切替")
+        _reply_once(reply_token, f"現在: {mode_label}\n\n「経営」「戦略」でモード切替\nKindleコマンド: 「kindle テーマ名」")
+        return
+
+    # Kindleコマンド（どのモードでも動作）
+    if lower.startswith("kindle "):
+        theme = text[7:].strip()
+        if not theme:
+            _reply_once(reply_token, "📚 使い方: 「kindle テーマ名」\n例: kindle AI副業入門")
+            return
+        _reply_once(reply_token, f"📚 Kindle生成を開始します\n\nテーマ: {theme}\n\n3〜5分お待ちください...")
+        threading.Thread(target=_run_kindle, args=(user_id, theme), daemon=True).start()
         return
 
     if get_mode(user_id) == "ceo":
@@ -120,14 +162,12 @@ def handle_message(event):
         save_message(user_id, "assistant", reply, "ceo")
         return
 
-    # 戦略ルームモード
-    # フォローアップメッセージなら前の議題を引き継ぐ
     last = _last_topic.get(user_id, "")
     if is_followup(text) and last:
         topic = f"{last}\n\n（追加指示: {text}）"
     else:
         topic = text
-        _last_topic[user_id] = text  # 新しい議題を記憶
+        _last_topic[user_id] = text
 
     _reply_once(reply_token, "🏛️ 議論中...")
 
