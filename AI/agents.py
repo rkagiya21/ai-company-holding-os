@@ -9,10 +9,10 @@ import requests
 from loguru import logger
 
 CLAUDE_MODEL = "claude-sonnet-4-5-20251001"
-GEMINI_MODEL = "gemini-1.5-pro"
+GEMINI_MODEL = "gemini-1.5-flash"
 
 def _call_claude(system: str, user: str, max_tokens: int = 600) -> str:
-    api_key = os.getenv("ANTHROPIC_API_KEY", "")
+    api_key = os.getenv("ANTHROPIC_API_KEY", "").strip()
     if not api_key:
         return "[ANTHROPIC_API_KEY未設定]"
     try:
@@ -38,7 +38,7 @@ def _call_claude(system: str, user: str, max_tokens: int = 600) -> str:
         return f"[Claudeエラー: {e}]"
 
 def _call_gemini(system: str, user: str) -> str:
-    api_key = os.getenv("GEMINI_API_KEY", "")
+    api_key = os.getenv("GEMINI_API_KEY", "").strip()
     if not api_key:
         return "[GEMINI_API_KEY未設定]"
     try:
@@ -87,9 +87,7 @@ class DevAgent:
     def think(self, topic: str) -> str:
         system = (
             "あなたはAI会社の開発担当AIです。Webシステム・API連携・既存システム改修が専門です。"
-            "KAMUIガチャ改修、新規サイト構築、eBay/Amazon連携も担当します。"
             "200字以内で技術的実現可否と方針を述べ、最後に「実装方針: 〇〇」と明記してください。"
-            "注意: KAMUIの保護タグ backup-2026-03-12-gacha-working には絶対に触れない。"
         )
         return _call_claude(system, f"開発担当として意見を述べてください: {topic}")
 
