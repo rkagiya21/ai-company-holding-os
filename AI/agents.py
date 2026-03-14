@@ -7,23 +7,14 @@ CLAUDE_MODEL = "claude-haiku-4-5-20251001"
 GEMINI_MODEL = "gemini-2.0-flash"
 
 
-def _call_claude(system, user, max_tokens=1000):
+def _call_claude(system, user, max_tokens=600):
     key = os.getenv("ANTHROPIC_API_KEY", "").strip()
     if not key: return "[API Key Missing]"
     try:
         r = requests.post(
             "https://api.anthropic.com/v1/messages",
-            headers={
-                "x-api-key": key,
-                "anthropic-version": "2023-06-01",
-                "content-type": "application/json"
-            },
-            json={
-                "model": CLAUDE_MODEL,
-                "max_tokens": max_tokens,
-                "system": system,
-                "messages": [{"role": "user", "content": user}]
-            },
+            headers={"x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json"},
+            json={"model": CLAUDE_MODEL, "max_tokens": max_tokens, "system": system, "messages": [{"role": "user", "content": user}]},
             timeout=30
         )
         r.raise_for_status()
@@ -36,52 +27,54 @@ def _call_claude(system, user, max_tokens=1000):
 def _call_gemini(system, user):
     time.sleep(3)
     key = os.getenv("GEMINI_API_KEY", "").strip()
-    if not key: return "[Gemini Key Missing]"
+    if not key: return None
     try:
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent?key={key}"
-        payload = {
-            "system_instruction": {"parts": [{"text": system}]},
-            "contents": [{"parts": [{"text": user}]}],
-            "generationConfig": {"maxOutputTokens": 1000}
-        }
-        r = requests.post(url, json=payload, timeout=30)
+        r = requests.post(
+            url,
+            json={"system_instruction": {"parts": [{"text": system}]}, "contents": [{"parts": [{"text": user}]}], "generationConfig": {"maxOutputTokens": 600}},
+            timeout=15
+        )
         r.raise_for_status()
         return r.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
-    except Exception as e:
-        return f"[Gemini Error: {e}]"
+    except:
+        return None
 
 
 class AgentRouter:
     def council(self, topic):
-        company_context = (
-            "我々はAI開発・コンテンツ販売を行う会社です。"
-            "目標: Phase 7 完全自律経営。会長の承認のみで全事業を回す。"
-            "現在の主力事業: Kindle出版自動化、NOTE、YouTube/SNS自動化。"
-            "リソース: Claude API、Gemini API、Dify、LINE Bot。"
-            "重要ルール: APIコスト削減のため雑談・挨拶禁止。結論とビジネス根拠のみ述べること。"
+        ctx = (
+            "あなたはAI開発・コンテンツ販売会社の役員です。"
+            "Phase 7完全自律経営を目指しています。"
+            "ルール: 雑談禁止、150字以内のチャット形式で発言すること。"
         )
 
-        system_1 = f"{company_context}\nあなたは【経営参謀(Gemini)】です。市場性・収益性・リスクを分析し、戦略を先陣切って提示。250字以内。"
-        op_1 = _call_gemini(system_1, f"議題: {topic}")
+        # 1. 参謀（Gemini優先、失敗時はClaudeが代行）
+        sys1 = f"{ctx} あなたは【経営参謀】。戦略・リスクを端的に示せ。"
+        op1 = _call_gemini(sys1, topic)
+        if not op1:
+            op1 = _call_claude(sys1 + "（参謀代行）", topic)
 
-        system_2 = f"{company_context}\nあなたは【開発事業部長】です。参謀の戦略を受け、DifyやAPIでの自動化実装案を具体的に提言。250字以内。"
-        op_2 = _call_claude(system_2, f"議題: {topic}\n\n参謀の戦略:\n{op_1}\n\n開発実装案:")
+        # 2. 開発事業部長（参謀の発言を受けてツッコむ）
+        sys2 = f"{ctx} あなたは【開発事業部長】。参謀の意見にツッコみつつ自動化案を出せ。"
+        op2 = _call_claude(sys2, f"議題:{topic}\n参謀:{op1}")
 
-        system_3 = f"{company_context}\nあなたは【コンテンツ事業部長】です。Kindle/NOTE担当を統括。開発案を受け、収益最大化の制作戦略を提言。250字以内。"
-        op_3 = _call_claude(system_3, f"議題: {topic}\n\n開発部長の案:\n{op_2}\n\nコンテンツ戦略:")
+        # 3. コンテンツ事業部長
+        sys3 = f"{ctx} あなたは【コンテンツ事業部長】。開発案を受けKindle/NOTE収益化の観点で発言せよ。"
+        op3 = _call_claude(sys3, f"議題:{topic}\n開発:{op2}")
 
-        system_4 = f"{company_context}\nあなたは【SNS事業部長】です。YouTube/SNS自動運用を統括。コンテンツ部長の案を受け、集客・拡散フローを提言。250字以内。"
-        op_4 = _call_claude(system_4, f"議題: {topic}\n\nコンテンツ部長の案:\n{op_3}\n\n集客戦略:")
+        # 4. SNS事業部長
+        sys4 = f"{ctx} あなたは【SNS事業部長】。コンテンツ案を受けYouTube/SNS拡散策を出せ。"
+        op4 = _call_claude(sys4, f"議題:{topic}\n制作:{op3}")
 
-        all_opinions = f"参謀: {op_1}\n開発: {op_2}\nコンテンツ: {op_3}\nSNS: {op_4}"
-        system_ceo = f"{company_context}\nあなたは【AI CEO】です。各部長の議論を統合し、会長がYES/NOで判断できる最終決済案を提示。余計な言葉不要。"
-        final = _call_claude(system_ceo, f"議題: {topic}\n\n議論:\n{all_opinions}\n\n最終決済案:", max_tokens=1000)
+        # 5. AI CEO（最終決済）
+        sys_ceo = f"{ctx} あなたは【AI CEO】。議論を総括し会長へYES/NOで問う最終案を出せ。"
+        ceo = _call_claude(sys_ceo, f"議題:{topic}\n議論:{op1} / {op2} / {op3} / {op4}", max_tokens=800)
 
-        res = "━━━━━━━━━━━━━━━\n🏛️ 経営会議 合議結果\n"
-        res += f"テーマ: {topic}\n━━━━━━━━━━━━━━━\n\n"
-        res += f"🔭 経営参謀\n{op_1}\n\n"
-        res += f"⚙️ 開発事業部長\n{op_2}\n\n"
-        res += f"✍️ コンテンツ事業部長\n{op_3}\n\n"
-        res += f"🎬 SNS事業部長\n{op_4}\n\n"
-        res += f"━━━━━━━━━━━━━━━\n👑 AI CEO 最終決済案\n{final}"
+        res = f"🏛️ 経営会議: {topic}\n\n"
+        res += f"🔭 参謀\n{op1}\n\n"
+        res += f"⚙️ 開発\n{op2}\n\n"
+        res += f"✍️ 制作\n{op3}\n\n"
+        res += f"🎬 SNS\n{op4}\n\n"
+        res += f"━━━━━━━━━━━━━━━\n👑 CEO 最終決済案\n{ceo}"
         return res
