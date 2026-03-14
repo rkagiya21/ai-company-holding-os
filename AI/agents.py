@@ -6,6 +6,26 @@ from loguru import logger
 CLAUDE_MODEL = "claude-haiku-4-5-20251001"
 GEMINI_MODEL = "gemini-2.0-flash"
 
+CTX = (
+    "あなたはAI開発・コンテンツ販売会社の役員です。"
+    "Phase 7完全自律経営を目指しています。"
+    "ルール: 雑談禁止。150字以内のチャット形式で発言すること。"
+)
+
+# 名指しキーワードと対応エージェント
+AGENT_KEYWORDS = {
+    "参謀": "sanbo",
+    "開発": "kaihatsu",
+    "制作": "seisaku",
+    "コンテンツ": "seisaku",
+    "sns": "sns",
+    "youtube": "sns",
+    "kindle": "seisaku",
+    "note": "seisaku",
+    "ceo": "ceo",
+    "社長": "ceo",
+}
+
 
 def _call_claude(system, user, max_tokens=600):
     key = os.getenv("ANTHROPIC_API_KEY", "").strip()
@@ -41,40 +61,69 @@ def _call_gemini(system, user):
         return None
 
 
+def detect_target(text):
+    """名指しされたエージェントを検出。なければNone（全員会議）"""
+    lower = text.lower()
+    for keyword, agent in AGENT_KEYWORDS.items():
+        if keyword in lower:
+            return agent
+    return None
+
+
 class AgentRouter:
+
+    def _get_sanbo(self, topic):
+        sys1 = f"{CTX} あなたは【経営参謀(Gemini)】。戦略・リスクを端的に示せ。"
+        op = _call_gemini(sys1, topic)
+        if not op:
+            op = _call_claude(f"{CTX} あなたは【経営参謀(代行)】。戦略・リスクを端的に示せ。", topic)
+        return ("🔭 経営参謀", op)
+
+    def _get_kaihatsu(self, topic, prev=""):
+        sys2 = f"{CTX} あなたは【開発事業部長】。Dify/APIでの自動化案を端的に出せ。"
+        user = f"議題:{topic}" + (f"\n前の発言:{prev}" if prev else "")
+        return ("⚙️ 開発事業部長", _call_claude(sys2, user))
+
+    def _get_seisaku(self, topic, prev=""):
+        sys3 = f"{CTX} あなたは【コンテンツ事業部長】。Kindle/NOTE収益化の観点で発言せよ。"
+        user = f"議題:{topic}" + (f"\n前の発言:{prev}" if prev else "")
+        return ("✍️ コンテンツ事業部長", _call_claude(sys3, user))
+
+    def _get_sns(self, topic, prev=""):
+        sys4 = f"{CTX} あなたは【SNS事業部長】。YouTube/SNS集客策を出せ。"
+        user = f"議題:{topic}" + (f"\n前の発言:{prev}" if prev else "")
+        return ("🎬 SNS事業部長", _call_claude(sys4, user))
+
+    def _get_ceo(self, topic, all_opinions):
+        sys_ceo = f"{CTX} あなたは【AI CEO】。議論を短く総括し会長へYES/NOで問え。"
+        return ("👑 AI CEO", _call_claude(sys_ceo, f"議題:{topic}\n議論:{all_opinions}", max_tokens=500))
+
+    def single(self, agent, topic):
+        """名指し時：対象エージェントだけ返答"""
+        if agent == "sanbo":
+            name, op = self._get_sanbo(topic)
+        elif agent == "kaihatsu":
+            name, op = self._get_kaihatsu(topic)
+        elif agent == "seisaku":
+            name, op = self._get_seisaku(topic)
+        elif agent == "sns":
+            name, op = self._get_sns(topic)
+        else:
+            name, op = self._get_ceo(topic, topic)
+        return [(name, op)]
+
     def council(self, topic):
-        ctx = (
-            "あなたはAI開発・コンテンツ販売会社の役員です。"
-            "Phase 7完全自律経営を目指しています。"
-            "ルール: 雑談禁止、150字以内のチャット形式で発言すること。"
-        )
+        """全員会議モード：連鎖型ディスカッション"""
+        target = detect_target(topic)
+        if target:
+            return self.single(target, topic)
 
-        # 1. 参謀（Gemini優先、失敗時はClaudeが代行）
-        sys1 = f"{ctx} あなたは【経営参謀】。戦略・リスクを端的に示せ。"
-        op1 = _call_gemini(sys1, topic)
-        if not op1:
-            op1 = _call_claude(sys1 + "（参謀代行）", topic)
+        # 全員会議
+        n1, op1 = self._get_sanbo(topic)
+        n2, op2 = self._get_kaihatsu(topic, op1)
+        n3, op3 = self._get_seisaku(topic, op2)
+        n4, op4 = self._get_sns(topic, op3)
+        all_ops = f"{op1} / {op2} / {op3} / {op4}"
+        n5, op5 = self._get_ceo(topic, all_ops)
 
-        # 2. 開発事業部長（参謀の発言を受けてツッコむ）
-        sys2 = f"{ctx} あなたは【開発事業部長】。参謀の意見にツッコみつつ自動化案を出せ。"
-        op2 = _call_claude(sys2, f"議題:{topic}\n参謀:{op1}")
-
-        # 3. コンテンツ事業部長
-        sys3 = f"{ctx} あなたは【コンテンツ事業部長】。開発案を受けKindle/NOTE収益化の観点で発言せよ。"
-        op3 = _call_claude(sys3, f"議題:{topic}\n開発:{op2}")
-
-        # 4. SNS事業部長
-        sys4 = f"{ctx} あなたは【SNS事業部長】。コンテンツ案を受けYouTube/SNS拡散策を出せ。"
-        op4 = _call_claude(sys4, f"議題:{topic}\n制作:{op3}")
-
-        # 5. AI CEO（最終決済）
-        sys_ceo = f"{ctx} あなたは【AI CEO】。議論を総括し会長へYES/NOで問う最終案を出せ。"
-        ceo = _call_claude(sys_ceo, f"議題:{topic}\n議論:{op1} / {op2} / {op3} / {op4}", max_tokens=800)
-
-        res = f"🏛️ 経営会議: {topic}\n\n"
-        res += f"🔭 参謀\n{op1}\n\n"
-        res += f"⚙️ 開発\n{op2}\n\n"
-        res += f"✍️ 制作\n{op3}\n\n"
-        res += f"🎬 SNS\n{op4}\n\n"
-        res += f"━━━━━━━━━━━━━━━\n👑 CEO 最終決済案\n{ceo}"
-        return res
+        return [(n1, op1), (n2, op2), (n3, op3), (n4, op4), (n5, op5)]
