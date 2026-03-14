@@ -4,6 +4,7 @@ AI/agents.py Phase 7
 """
 from __future__ import annotations
 import os
+import time
 import requests
 from loguru import logger
 
@@ -13,6 +14,7 @@ GEMINI_MODEL = "gemini-2.0-flash"
 
 def _call_claude(system: str, user: str, max_tokens: int = 600) -> str:
     api_key = os.getenv("ANTHROPIC_API_KEY", "").strip()
+    logger.info(f"[Claude] key_len={len(api_key)} key_start={api_key[:12] if api_key else None}")
     if not api_key:
         return "[ANTHROPIC_API_KEY未設定]"
     try:
@@ -31,7 +33,10 @@ def _call_claude(system: str, user: str, max_tokens: int = 600) -> str:
             },
             timeout=30,
         )
-        resp.raise_for_status()
+        if resp.status_code != 200:
+            detail = resp.text[:200]
+            logger.error(f"[Claude] {resp.status_code}: {detail}")
+            return f"[Claudeエラー {resp.status_code}: {detail}]"
         return resp.json()["content"][0]["text"].strip()
     except Exception as e:
         logger.error(f"[Claude API] {e}")
@@ -39,6 +44,7 @@ def _call_claude(system: str, user: str, max_tokens: int = 600) -> str:
 
 
 def _call_gemini(system: str, user: str) -> str:
+    time.sleep(1)
     api_key = os.getenv("GEMINI_API_KEY", "").strip()
     if not api_key:
         return "[GEMINI_API_KEY未設定]"
