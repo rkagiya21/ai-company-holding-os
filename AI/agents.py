@@ -68,11 +68,8 @@ class StrategistAgent:
     icon = "🔭"
 
     def think(self, topic: str) -> str:
-        system = (
-            "あなたはAI会社の参謀AIです。市場トレンド・競合分析・収益予測が専門です。"
-            "200字以内で意見を述べ、最後に「推奨アクション: 〇〇」と明記してください。"
-        )
-        return _call_gemini(system, f"参謀として意見を述べてください: {topic}")
+        system = "あなたはAI会社の参謀AIです。200字以内で意見を述べ「推奨アクション: 〇〇」と明記してください。"
+        return _call_gemini(system, f"参謀として意見を: {topic}")
 
 
 class CreativeAgent:
@@ -80,11 +77,8 @@ class CreativeAgent:
     icon = "✍️"
 
     def think(self, topic: str) -> str:
-        system = (
-            "あなたはAI会社の制作担当AIです。Kindle・NOTE・YouTube・SNSのコンテンツ制作が専門です。"
-            "200字以内で具体的な制作プランを提案し、最後に「制作プラン: 〇〇」と明記してください。"
-        )
-        return _call_claude(system, f"制作担当として意見を述べてください: {topic}")
+        system = "あなたはAI会社の制作担当AIです。200字以内で制作プランを提案し「制作プラン: 〇〇」と明記してください。"
+        return _call_claude(system, f"制作担当として意見を: {topic}")
 
 
 class DevAgent:
@@ -92,11 +86,8 @@ class DevAgent:
     icon = "⚙️"
 
     def think(self, topic: str) -> str:
-        system = (
-            "あなたはAI会社の開発担当AIです。Webシステム・API連携・既存システム改修が専門です。"
-            "200字以内で技術的実現可否と方針を述べ、最後に「実装方針: 〇〇」と明記してください。"
-        )
-        return _call_claude(system, f"開発担当として意見を述べてください: {topic}")
+        system = "あなたはAI会社の開発担当AIです。200字以内で技術方針を述べ「実装方針: 〇〇」と明記してください。"
+        return _call_claude(system, f"開発担当として意見を: {topic}")
 
 
 class KindleAgent:
@@ -104,11 +95,8 @@ class KindleAgent:
     icon = "📚"
 
     def think(self, topic: str) -> str:
-        system = (
-            "あなたはKindle電子書籍出版の専門AIです。KDPカテゴリ戦略・タイトル・構成・価格設定が専門です。"
-            "200字以内で出版戦略を提案し、最後に「出版戦略: 〇〇」と明記してください。"
-        )
-        return _call_claude(system, f"Kindle担当として意見を述べてください: {topic}")
+        system = "あなたはKindle出版の専門AIです。200字以内で出版戦略を提案し「出版戦略: 〇〇」と明記してください。"
+        return _call_claude(system, f"Kindle担当として意見を: {topic}")
 
 
 class NoteAgent:
@@ -116,11 +104,8 @@ class NoteAgent:
     icon = "📝"
 
     def think(self, topic: str) -> str:
-        system = (
-            "あなたはNOTE記事販売の専門AIです。有料記事戦略・NOTEアルゴリズム・フォロワー獲得が専門です。"
-            "200字以内でNOTE展開戦略を提案し、最後に「NOTE戦略: 〇〇」と明記してください。"
-        )
-        return _call_claude(system, f"NOTE担当として意見を述べてください: {topic}")
+        system = "あなたはNOTE販売の専門AIです。200字以内でNOTE戦略を提案し「NOTE戦略: 〇〇」と明記してください。"
+        return _call_claude(system, f"NOTE担当として意見を: {topic}")
 
 
 class YouTubeSNSAgent:
@@ -128,11 +113,8 @@ class YouTubeSNSAgent:
     icon = "🎬"
 
     def think(self, topic: str) -> str:
-        system = (
-            "あなたはYouTube・SNS（X/Instagram）の専門AIです。バズるコンテンツ・拡散・SEOが専門です。"
-            "200字以内でYouTube/SNS展開戦略を提案し、最後に「拡散戦略: 〇〇」と明記してください。"
-        )
-        return _call_claude(system, f"YouTube/SNS担当として意見を述べてください: {topic}")
+        system = "あなたはYouTube・SNSの専門AIです。200字以内で拡散戦略を提案し「拡散戦略: 〇〇」と明記してください。"
+        return _call_claude(system, f"YouTube/SNS担当として意見を: {topic}")
 
 
 class CEOAgent:
@@ -144,30 +126,19 @@ class CEOAgent:
             f"【{o['name']}】{o['opinion']}" for o in opinions
         )
         system = (
-            "あなたはAI会社のCEOです。各エージェントの意見を統合して会長への最終合議案を作成します。\n"
-            "形式:\n"
-            "■ 各意見の要点（箇条書き）\n"
-            "■ 総合判断（150字以内）\n"
-            "■ 推奨アクション（具体的な次の1手）\n"
-            "■ 承認が必要な場合は「→ 承認が必要です。YES/NOで返答ください」と明記"
+            "あなたはAI会社のCEOです。各エージェントの意見を統合して最終合議案を作成します。\n"
+            "■ 各意見の要点\n■ 総合判断（150字以内）\n■ 推奨アクション\n"
+            "承認が必要な場合は「→ 承認が必要です。YES/NOで返答ください」と明記"
         )
-        user = (
-            f"テーマ: {topic}\n\n"
-            f"各エージェントの意見:\n{opinions_text}\n\n"
-            "上記を統合して最終合議案を作成してください。"
-        )
+        user = f"テーマ: {topic}\n\n各意見:\n{opinions_text}\n\n最終合議案を作成してください。"
         return _call_claude(system, user, max_tokens=1000)
 
 
 class AgentRouter:
     def __init__(self):
         self.agents = [
-            StrategistAgent(),
-            CreativeAgent(),
-            DevAgent(),
-            KindleAgent(),
-            NoteAgent(),
-            YouTubeSNSAgent(),
+            StrategistAgent(), CreativeAgent(), DevAgent(),
+            KindleAgent(), NoteAgent(), YouTubeSNSAgent(),
         ]
         self.ceo = CEOAgent()
 
