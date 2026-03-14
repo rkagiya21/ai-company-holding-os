@@ -1,4 +1,5 @@
-"""AI/bot.py Phase 8 LINE Bot - スマート指名モード対応版"""
+"""AI/bot.py Phase 8 LINE Bot - リアルタイム個別送信版"""
+import time
 from flask import Flask, request, abort
 from linebot.v3 import WebhookHandler
 from linebot.v3.exceptions import InvalidSignatureError
@@ -10,7 +11,7 @@ from linebot.v3.webhooks import MessageEvent, TextMessageContent
 from loguru import logger
 from settings import LINE_CHANNEL_ACCESS_TOKEN, LINE_CHANNEL_SECRET
 from agents import AgentRouter
-from memory import save_message, get_history, format_history_for_prompt, save_approval
+from memory import save_message, save_approval
 
 app = Flask(__name__)
 handler = WebhookHandler(LINE_CHANNEL_SECRET)
@@ -28,14 +29,17 @@ def set_mode(user_id, mode):
 
 def push_text(user_id, text):
     """Push APIで1通送信"""
-    config = Configuration(access_token=LINE_CHANNEL_ACCESS_TOKEN)
-    with ApiClient(config) as api_client:
-        MessagingApi(api_client).push_message(
-            PushMessageRequest(
-                to=user_id,
-                messages=[TextMessage(type="text", text=text[:2000])],
+    try:
+        config = Configuration(access_token=LINE_CHANNEL_ACCESS_TOKEN)
+        with ApiClient(config) as api_client:
+            MessagingApi(api_client).push_message(
+                PushMessageRequest(
+                    to=user_id,
+                    messages=[TextMessage(type="text", text=str(text)[:2000])],
+                )
             )
-        )
+    except Exception as e:
+        logger.error(f"[Push Error] {e}")
 
 
 @app.route("/webhook", methods=["POST"])
@@ -55,31 +59,28 @@ def handle_message(event):
     text = event.message.text.strip()
     user_id = event.source.user_id
     reply_token = event.reply_token
+    lower = text.lower()
 
     save_message(user_id, "user", text, get_mode(user_id))
-
-    mode = get_mode(user_id)
-    lower = text.lower()
 
     # モード切り替え
     if lower in ("経営モード", "ceo", "経営"):
         set_mode(user_id, "ceo")
-        reply = "👔 【経営モード】に切り替えました\n\nAI CEOが対応します。\n・状況 — 事業レポート\n・承認 / キャンセル / 保留\n\n「戦略」で戦略ルームへ。"
-        _reply_once(reply_token, reply)
+        _reply_once(reply_token, "👔 【経営モード】に切り替えました\n\n「戦略」で戦略ルームへ。")
         return
 
     if lower in ("戦略ルームモード", "戦略ルーム", "戦略", "strategy"):
         set_mode(user_id, "strategy")
         reply = (
             "🏛️ 【戦略ルームモード】\n\n"
-            "参加メンバー:\n"
-            "🔭 経営参謀（Gemini）\n"
-            "⚙️ 開発事業部長\n"
-            "✍️ コンテンツ事業部長\n"
-            "🎬 SNS事業部長\n"
-            "👑 AI CEO\n\n"
-            "名指しOK例: 「開発さん、Kindleの進捗は？」\n"
-            "全員会議: 「全員で議論して」\n"
+            "メンバー:\n"
+            "🔭 ジェミちゃん（参謀）\n"
+            "⚙️ テック君（開発）\n"
+            "✍️ カリスマ（コンテンツ）\n"
+            "🎬 映え子さん（SNS）\n"
+            "👑 ボブ（CEO）\n\n"
+            "名指しOK: 「テック君、〇〇して」\n"
+            "全員会議: そのまま議題を投げる\n"
             "「経営」で経営モードへ。"
         )
         _reply_once(reply_token, reply)
@@ -87,8 +88,7 @@ def handle_message(event):
 
     if lower in ("ヘルプ", "help"):
         mode_label = "👔 経営" if get_mode(user_id) == "ceo" else "🏛️ 戦略ルーム"
-        reply = f"現在: {mode_label}\n\n「経営」「戦略」でモード切替\n名指し例: 「開発さん〇〇して」"
-        _reply_once(reply_token, reply)
+        _reply_once(reply_token, f"現在: {mode_label}\n\n「経営」「戦略」でモード切替\n名指し例: 「テック君〇〇して」")
         return
 
     if get_mode(user_id) == "ceo":
@@ -97,8 +97,8 @@ def handle_message(event):
         save_message(user_id, "assistant", reply, "ceo")
         return
 
-    # 戦略ルームモード — Push APIで1人ずつ送信
-    # まずreply_tokenで即座にACK
+    # 戦略ルームモード
+    # reply_tokenで即座にACK送信
     _reply_once(reply_token, "🏛️ 議論中...")
 
     try:
@@ -107,6 +107,7 @@ def handle_message(event):
             msg = f"{name}\n{opinion}"
             push_text(user_id, msg)
             save_message(user_id, "assistant", msg, "strategy")
+            time.sleep(0.3)  # 連続Push制限回避
     except Exception as e:
         logger.error(f"[Bot] 戦略エラー: {e}")
         push_text(user_id, f"⚠️ エラー: {e}")
@@ -118,7 +119,7 @@ def _reply_once(reply_token, text):
         MessagingApi(api_client).reply_message(
             ReplyMessageRequest(
                 reply_token=reply_token,
-                messages=[TextMessage(type="text", text=text[:2000])],
+                messages=[TextMessage(type="text", text=str(text)[:2000])],
             )
         )
 
