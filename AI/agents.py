@@ -6,31 +6,39 @@ from loguru import logger
 CLAUDE_MODEL = "claude-haiku-4-5-20251001"
 GEMINI_MODEL = "gemini-2.0-flash"
 
-# 会社コンテキスト＆キャラクター定義
 CTX = (
-    "弊社はAI開発・コンテンツ販売会社。Phase 7完全自律経営を目指す。"
-    "雑談禁止。150字以内のチャット形式で発言すること。"
-    "メンバー: ボブ(CEO), ジェミちゃん(参謀), テック君(開発), カリスマ(コンテンツ), 映え子さん(SNS)。"
+    "弊社はPhase 7完全自律経営を目指す。雑談禁止。短くチャット形式。"
+    "ボブ: CEO司会・最終決済。ジェミちゃん: 戦略。テック君: 開発・自動化。"
+    "カリスマ: コンテンツ収益。映え子さん: SNS拡散。"
 )
 
-# メンション（あだ名）→エージェントID マッピング
-MENTION_MAP = {
-    "テック": "tech",
-    "ジェミ": "sanbo",
-    "カリスマ": "content",
-    "映え": "sns",
-    "ボブ": "ceo",
-    "bob": "ceo",
-    "tech": "tech",
-    "開発": "tech",
-    "参謀": "sanbo",
-    "コンテンツ": "content",
-    "制作": "content",
-    "sns": "sns",
-    "youtube": "sns",
-    "ceo": "ceo",
-    "社長": "ceo",
-}
+# メンション判定マップ（リスト形式で優先度順）
+MENTION_MAP = [
+    ("テック君", "tech"),
+    ("テック", "tech"),
+    ("tech", "tech"),
+    ("開発部長", "tech"),
+    ("開発さん", "tech"),
+    ("開発は", "tech"),
+    ("開発に", "tech"),
+    ("開発担当", "tech"),
+    ("ジェミちゃん", "sanbo"),
+    ("ジェミ", "sanbo"),
+    ("参謀", "sanbo"),
+    ("gemini", "sanbo"),
+    ("カリスマ", "content"),
+    ("コンテンツ部長", "content"),
+    ("制作担当", "content"),
+    ("映え子さん", "sns"),
+    ("映え子", "sns"),
+    ("映え", "sns"),
+    ("sns部長", "sns"),
+    ("youtube", "sns"),
+    ("ボブ", "ceo"),
+    ("bob", "ceo"),
+    ("ceo", "ceo"),
+    ("社長", "ceo"),
+]
 
 
 def _call_claude(system, user, max_tokens=600):
@@ -47,7 +55,7 @@ def _call_claude(system, user, max_tokens=600):
         return r.json()["content"][0]["text"].strip()
     except Exception as e:
         logger.error(f"Claude Error: {e}")
-        return f"[Claude Error: {e}]"
+        return "[通信エラー]"
 
 
 def _call_gemini(system, user):
@@ -68,9 +76,8 @@ def _call_gemini(system, user):
 
 
 def detect_mention(text):
-    """あだ名・メンションを検出してエージェントIDを返す。なければNone"""
     lower = text.lower()
-    for keyword, agent_id in MENTION_MAP.items():
+    for keyword, agent_id in MENTION_MAP:
         if keyword.lower() in lower:
             return agent_id
     return None
@@ -104,15 +111,15 @@ class AgentRouter:
         sys_ceo = (
             f"{CTX} あなたは【ボブ】AI CEO。議論を短く総括し会長へYES/NOで問え。"
             "わからないことを聞かれたら中学生でも分かるように噛み砕いて説明すること。"
+            "議論の中でテック君に確認が必要な場合は必ずテック君に質問を振ること。"
         )
         user = f"議題:{topic}" + (f"\n議論:{discussion}" if discussion else "")
         return ("👑 ボブ（AI CEO）", _call_claude("".join(sys_ceo), user, max_tokens=500))
 
     def council(self, topic):
-        """メンション検出 → 指名された1人だけ / なければ全員会議"""
         target = detect_mention(topic)
 
-        # 指名モード（API1回のみ = コスト最小）
+        # 指名モード（API1回のみ）
         if target == "tech":
             return [self._claude_tech(topic)]
         elif target == "sanbo":
@@ -132,4 +139,15 @@ class AgentRouter:
         all_ops = f"{op1} / {op2} / {op3} / {op4}"
         n5, op5 = self._claude_ceo(topic, all_ops)
 
-        return [(n1, op1), (n2, op2), (n3, op3), (n4, op4), (n5, op5)]
+        results = [(n1, op1), (n2, op2), (n3, op3), (n4, op4), (n5, op5)]
+
+        # ボブがテック君に質問した場合、テック君が自動で追加回答
+        if "テック" in op5:
+            tech_sys = (
+                f"{CTX} あなたは【テック君】。ボブCEOから質問が来ました。"
+                "YES/NOで答えてから理由を一言添えよ。"
+            )
+            _, tech_follow = self._claude_tech(op5)
+            results.append(("⚙️ テック君（返答）", tech_follow))
+
+        return results
