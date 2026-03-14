@@ -1,4 +1,4 @@
-"""AI/bot.py Phase 8 LINE Bot - リアルタイム個別送信版"""
+"""AI/bot.py - 議題記憶+思考スタイルB案対応版"""
 import time
 from flask import Flask, request, abort
 from linebot.v3 import WebhookHandler
@@ -17,18 +17,23 @@ app = Flask(__name__)
 handler = WebhookHandler(LINE_CHANNEL_SECRET)
 router = AgentRouter()
 _user_mode = {}
+_last_topic = {}  # ユーザーごとの最後の議題を記憶
+
+# 短い・曖昧なメッセージのパターン
+FOLLOWUP_PATTERNS = [
+    "どうですか", "どう思う", "どうでしょう", "意見は",
+    "続けて", "もっと", "他には", "次は", "それで",
+    "そうですね", "なるほど", "進めて", "やって",
+]
 
 
 def get_mode(user_id):
     return _user_mode.get(user_id, "ceo")
 
-
 def set_mode(user_id, mode):
     _user_mode[user_id] = mode
 
-
 def push_text(user_id, text):
-    """Push APIで1通送信"""
     try:
         config = Configuration(access_token=LINE_CHANNEL_ACCESS_TOKEN)
         with ApiClient(config) as api_client:
@@ -41,6 +46,24 @@ def push_text(user_id, text):
     except Exception as e:
         logger.error(f"[Push Error] {e}")
 
+def _reply_once(reply_token, text):
+    config = Configuration(access_token=LINE_CHANNEL_ACCESS_TOKEN)
+    with ApiClient(config) as api_client:
+        MessagingApi(api_client).reply_message(
+            ReplyMessageRequest(
+                reply_token=reply_token,
+                messages=[TextMessage(type="text", text=str(text)[:2000])],
+            )
+        )
+
+def is_followup(text):
+    """曖昧な継続メッセージかどうかを判定"""
+    if len(text) < 15:  # 短いメッセージ
+        return True
+    for pat in FOLLOWUP_PATTERNS:
+        if pat in text:
+            return True
+    return False
 
 @app.route("/webhook", methods=["POST"])
 def webhook():
@@ -52,7 +75,6 @@ def webhook():
         logger.warning("[Bot] 無効な署名")
         abort(400)
     return "OK"
-
 
 @handler.add(MessageEvent, message=TextMessageContent)
 def handle_message(event):
@@ -71,6 +93,7 @@ def handle_message(event):
 
     if lower in ("戦略ルームモード", "戦略ルーム", "戦略", "strategy"):
         set_mode(user_id, "strategy")
+        _last_topic[user_id] = ""  # 議題リセット
         reply = (
             "🏛️ 【戦略ルームモード】\n\n"
             "メンバー:\n"
@@ -88,7 +111,7 @@ def handle_message(event):
 
     if lower in ("ヘルプ", "help"):
         mode_label = "👔 経営" if get_mode(user_id) == "ceo" else "🏛️ 戦略ルーム"
-        _reply_once(reply_token, f"現在: {mode_label}\n\n「経営」「戦略」でモード切替\n名指し例: 「テック君〇〇して」")
+        _reply_once(reply_token, f"現在: {mode_label}\n\n「経営」「戦略」でモード切替")
         return
 
     if get_mode(user_id) == "ceo":
@@ -98,31 +121,26 @@ def handle_message(event):
         return
 
     # 戦略ルームモード
-    # reply_tokenで即座にACK送信
+    # フォローアップメッセージなら前の議題を引き継ぐ
+    last = _last_topic.get(user_id, "")
+    if is_followup(text) and last:
+        topic = f"{last}\n\n（追加指示: {text}）"
+    else:
+        topic = text
+        _last_topic[user_id] = text  # 新しい議題を記憶
+
     _reply_once(reply_token, "🏛️ 議論中...")
 
     try:
-        results = router.council(text)
+        results = router.council(topic)
         for name, opinion in results:
             msg = f"{name}\n{opinion}"
             push_text(user_id, msg)
             save_message(user_id, "assistant", msg, "strategy")
-            time.sleep(0.3)  # 連続Push制限回避
+            time.sleep(0.3)
     except Exception as e:
         logger.error(f"[Bot] 戦略エラー: {e}")
         push_text(user_id, f"⚠️ エラー: {e}")
-
-
-def _reply_once(reply_token, text):
-    config = Configuration(access_token=LINE_CHANNEL_ACCESS_TOKEN)
-    with ApiClient(config) as api_client:
-        MessagingApi(api_client).reply_message(
-            ReplyMessageRequest(
-                reply_token=reply_token,
-                messages=[TextMessage(type="text", text=str(text)[:2000])],
-            )
-        )
-
 
 def _handle_ceo(user_id, text, lower):
     if lower in ("状況", "status", "report", "レポート"):
@@ -141,7 +159,6 @@ def _handle_ceo(user_id, text, lower):
         save_approval(user_id, "保留", text)
         return "⏸ 保留にしました。"
     return f"👔 AI CEO: 「{text}」受け取りました。\n承認/キャンセル/保留 または 状況 でコマンドを。"
-
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8000, debug=False)
