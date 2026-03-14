@@ -1,8 +1,9 @@
 """
-AI/bot.py  Phase 7
+AI/bot.py  Phase 8
 LINE Messaging API Webhook サーバ（Flask）
 - 経営モード  : AI CEO が売上・進捗・承認を管理
 - 戦略ルームモード: 複数エージェントが合議して最終案を提出
+- Supabase長期記憶: 会話・承認・指示を永続化
 """
 from flask import Flask, request, abort
 from linebot.v3 import WebhookHandler
@@ -19,21 +20,23 @@ from loguru import logger
 
 from settings import LINE_CHANNEL_ACCESS_TOKEN, LINE_CHANNEL_SECRET
 from agents import AgentRouter
+from memory import (
+    save_message, get_history, format_history_for_prompt,
+    save_approval, set_directive, get_directive,
+)
 
 app = Flask(__name__)
 handler = WebhookHandler(LINE_CHANNEL_SECRET)
 router = AgentRouter()
 
-# ── ユーザーモード管理（メモリ内、再起動でリセット）──────────────────
-_user_mode: dict[str, str] = {}  # user_id -> "ceo" | "strategy"
+_user_mode = {}
 
-def get_mode(user_id: str) -> str:
+def get_mode(user_id):
     return _user_mode.get(user_id, "ceo")
 
-def set_mode(user_id: str, mode: str) -> None:
+def set_mode(user_id, mode):
     _user_mode[user_id] = mode
 
-# ── Webhook エンドポイント ──────────────────────────────────
 @app.route("/webhook", methods=["POST"])
 def webhook():
     signature = request.headers.get("X-Line-Signature", "")
@@ -46,12 +49,17 @@ def webhook():
     return "OK"
 
 @handler.add(MessageEvent, message=TextMessageContent)
-def handle_message(event: MessageEvent):
+def handle_message(event):
     text = event.message.text.strip()
     user_id = event.source.user_id
     reply_token = event.reply_token
+    mode = get_mode(user_id)
+
+    save_message(user_id, "user", text, mode)
 
     reply = _process(user_id, text)
+
+    save_message(user_id, "assistant", reply, get_mode(user_id))
 
     config = Configuration(access_token=LINE_CHANNEL_ACCESS_TOKEN)
     with ApiClient(config) as api_client:
@@ -62,8 +70,7 @@ def handle_message(event: MessageEvent):
             )
         )
 
-# ── メッセージ処理メイン ──────────────────────────────────
-def _process(user_id: str, text: str) -> str:
+def _process(user_id, text):
     lower = text.lower()
 
     if lower in ("経営モード", "ceo", "経営"):
@@ -112,12 +119,11 @@ def _process(user_id: str, text: str) -> str:
 
     mode = get_mode(user_id)
     if mode == "ceo":
-        return _handle_ceo(text, lower)
+        return _handle_ceo(user_id, text, lower)
     else:
         return _handle_strategy(text)
 
-# ── 経営モード処理 ──────────────────────────────────
-def _handle_ceo(text: str, lower: str) -> str:
+def _handle_ceo(user_id, text, lower):
     if lower in ("状況", "status", "report", "レポート"):
         try:
             from reporter import MorningReporter
@@ -126,13 +132,19 @@ def _handle_ceo(text: str, lower: str) -> str:
             return f"⚠️ レポート取得エラー: {e}"
 
     if lower in ("承認", "yes", "はい", "ok"):
+        save_approval(user_id, "承認", text)
         return "✅ 承認しました。実行を開始します。"
 
     if lower in ("キャンセル", "no", "いいえ", "拒否"):
+        save_approval(user_id, "キャンセル", text)
         return "❌ キャンセルしました。"
 
     if lower in ("保留", "later", "あとで"):
+        save_approval(user_id, "保留", text)
         return "⏸ 保留にしました。後ほど確認してください。"
+
+    history = get_history(user_id, limit=10)
+    history_text = format_history_for_prompt(history)
 
     return (
         f"👔 AI CEO: 「{text}」を受け取りました。\n\n"
@@ -140,8 +152,7 @@ def _handle_ceo(text: str, lower: str) -> str:
         "全事業状況は「状況」で確認できます。"
     )
 
-# ── 戦略ルームモード処理（合議） ──────────────────────────────────
-def _handle_strategy(text: str) -> str:
+def _handle_strategy(text):
     try:
         return router.council(text)
     except Exception as e:
