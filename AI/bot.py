@@ -78,7 +78,7 @@ def _run_kindle(user_id, theme):
             "https://api.dify.ai/v1/workflows/run",
             headers={"Authorization": f"Bearer {DIFY_KEY}", "Content-Type": "application/json"},
             json={
-                "inputs": {"book_title": theme, "genre": "ビジネス・自己啓発"},
+                "inputs": {"book_title": theme},
                 "response_mode": "blocking",
                 "user": user_id
             },
