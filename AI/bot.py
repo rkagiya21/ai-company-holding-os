@@ -147,8 +147,8 @@ def handle_message(event):
         return
 
     # Kindleコマンド（どのモードでも動作）
-    if lower.startswith("kindle "):
-        theme = text[7:].strip()
+    if lower.startswith("kindle"):
+        theme = text[6:].strip()
         if not theme:
             _reply_once(reply_token, "📚 使い方: 「kindle テーマ名」\n例: kindle AI副業入門")
             return
