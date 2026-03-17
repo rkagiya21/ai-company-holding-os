@@ -7,7 +7,7 @@ from langchain.agents import AgentExecutor, create_tool_calling_agent
 from langchain.tools import tool
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from github import Github, GithubException
-from supabase import create_client, Client
+from supabase import create_client, Clienth
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
 logger = logging.getLogger(__name__)
@@ -20,7 +20,11 @@ SUPABASE_KEY   = os.environ.get('SUPABASE_SERVICE_KEY', '')
 AGENT_API_KEY  = os.environ.get('AGENT_API_KEY', 'secret-key-change-me')
 
 gh   = Github(GITHUB_TOKEN) if GITHUB_TOKEN else None
-supa = create_client(SUPABASE_URL, SUPABASE_KEY) if SUPABASE_URL and SUPABASE_KEY else None
+try:
+        supa = create_client(SUPABASE_URL, SUPABASE_KEY) if SUPABASE_URL and SUPABASE_KEY else None
+except Exception as _e:
+        logger.warning(f"Supabase init: {_e}")
+        supa = None
 
 @tool
 def github_read_file(file_path: str) -> str:
