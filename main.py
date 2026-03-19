@@ -1,7 +1,6 @@
-“””
-AI Company OS v5.0 - Autonomous Agent System
-Gemini脳 + GitHub/Supabase/Drive手足による自律型AIエージェント
-“””
+# AI Company OS v5.0 - Autonomous Agent System
+
+# Gemini脳 + GitHub/Supabase/Drive手足による自律型AIエージェント
 
 import os
 import json
